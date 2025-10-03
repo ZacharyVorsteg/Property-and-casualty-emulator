@@ -150,74 +150,111 @@ const SinglePageHO3 = () => {
     setRiskFactors(factors);
   }, [formData]);
   
-  // Calculate premium estimate with breakdown
+  // Calculate premium estimate with breakdown - CORRECTED CALCULATION
   useEffect(() => {
     // Start calculating once we have basic info
-    if (!formData.squareFeet) return;
+    if (!formData.squareFeet) {
+      setPremiumEstimate(0);
+      return;
+    }
     
     const sqft = parseInt(formData.squareFeet) || 0;
-    const county = formData.county || 'Orange';
-    const sqftRate = baseRates[county] || baseRates.default;
+    if (sqft === 0) return;
     
-    // Base rate calculation
-    const baseRate = sqft * (sqftRate * 100);
-    let premium = baseRate;
+    // STEP 1: Calculate replacement cost (what it costs to rebuild)
+    const replacementCost = sqft * 150; // $150 per square foot typical rebuild cost
+    
+    // Update dwelling limit
+    if (formData.dwellingLimit === 0 || !formData.dwellingLimit) {
+      updateField('dwellingLimit', replacementCost);
+    }
+    
+    // STEP 2: Calculate base premium (typically 0.6% - 1.2% of dwelling value in Florida)
+    const county = formData.county || 'Orange';
+    const countyMultiplier = {
+      'Miami-Dade': 1.5,    // 50% higher than baseline
+      'Monroe': 1.8,        // 80% higher (Keys)
+      'Broward': 1.4,
+      'Palm Beach': 1.3,
+      'Lee': 1.45,
+      'Collier': 1.5,
+      'Hillsborough': 1.2,
+      'Pinellas': 1.25,
+      'Pasco': 1.1,
+      'Hernando': 1.15,
+      'Orange': 1.0,        // Baseline (Orlando)
+      'Duval': 0.85         // 15% lower (Jacksonville)
+    }[county] || 1.0;
+    
+    // Base premium rate: 0.8% of dwelling value
+    const baseRatePercent = 0.008;
+    let premium = replacementCost * baseRatePercent * countyMultiplier;
     
     const breakdown = {
-      base: baseRate,
+      replacementCost: replacementCost,
+      baseRatePercent: baseRatePercent,
+      countyMultiplier: countyMultiplier,
+      base: premium,
       adjustments: []
     };
     
     // Construction multiplier
     if (formData.exteriorWalls) {
       if (formData.exteriorWalls === 'Frame') {
-        const adjustment = premium * 0.1;
-        premium *= 1.1;
-        breakdown.adjustments.push({ name: 'Frame Construction', amount: adjustment });
+        const adjustment = premium * 0.15;
+        premium *= 1.15;
+        breakdown.adjustments.push({ name: 'Frame Construction (+15%)', amount: adjustment });
       } else if (formData.exteriorWalls === 'Masonry/Concrete Block (CBS)') {
-        const adjustment = premium * -0.05;
-        premium *= 0.95;
-        breakdown.adjustments.push({ name: 'CBS Construction (Credit)', amount: adjustment });
+        const adjustment = premium * -0.10;
+        premium *= 0.90;
+        breakdown.adjustments.push({ name: 'CBS Construction (-10%)', amount: adjustment });
+      } else if (formData.exteriorWalls === 'Superior Construction') {
+        const adjustment = premium * -0.15;
+        premium *= 0.85;
+        breakdown.adjustments.push({ name: 'Superior Construction (-15%)', amount: adjustment });
       }
     }
     
-    // Roof age multiplier (biggest impact!)
+    // Roof age multiplier (BIGGEST IMPACT!)
     if (formData.roofAge) {
       const age = parseInt(formData.roofAge);
-      let multiplier = 1.0;
+      
       if (age <= 5) {
-        multiplier = 0.9;
-        const adjustment = baseRate * -0.1;
-        breakdown.adjustments.push({ name: 'New Roof Discount', amount: adjustment });
+        const adjustment = premium * -0.15;
+        premium *= 0.85;
+        breakdown.adjustments.push({ name: 'New Roof Discount (-15%)', amount: adjustment });
       } else if (age <= 10) {
-        multiplier = 1.0;
+        // No adjustment for standard 6-10 year roof
       } else if (age <= 15) {
-        multiplier = 1.15;
-        const adjustment = baseRate * 0.15;
-        breakdown.adjustments.push({ name: 'Older Roof Surcharge', amount: adjustment });
+        const adjustment = premium * 0.25;
+        premium *= 1.25;
+        breakdown.adjustments.push({ name: 'Older Roof Surcharge (+25%)', amount: adjustment });
       } else if (age <= 20) {
-        multiplier = 1.35;
-        const adjustment = baseRate * 0.35;
-        breakdown.adjustments.push({ name: 'Very Old Roof Surcharge', amount: adjustment });
+        const adjustment = premium * 0.75;
+        premium *= 1.75;
+        breakdown.adjustments.push({ name: 'Very Old Roof (+75%)', amount: adjustment });
       } else {
-        multiplier = 1.8;
-        const adjustment = baseRate * 0.8;
-        breakdown.adjustments.push({ name: 'Critical Roof Age Surcharge', amount: adjustment });
+        const adjustment = premium * 1.5;
+        premium *= 2.5;
+        breakdown.adjustments.push({ name: 'Critical Roof Age (+150%)', amount: adjustment });
       }
-      premium *= multiplier;
     }
     
     // Building age
     if (formData.yearBuilt) {
       const age = 2025 - parseInt(formData.yearBuilt);
       if (age >= 40) {
-        const adjustment = premium * 0.3;
-        premium *= 1.3;
-        breakdown.adjustments.push({ name: 'Building Age (40+ years)', amount: adjustment });
+        const adjustment = premium * 0.30;
+        premium *= 1.30;
+        breakdown.adjustments.push({ name: 'Building Age 40+ yrs (+30%)', amount: adjustment });
       } else if (age >= 30) {
-        const adjustment = premium * 0.2;
-        premium *= 1.2;
-        breakdown.adjustments.push({ name: 'Building Age (30+ years)', amount: adjustment });
+        const adjustment = premium * 0.15;
+        premium *= 1.15;
+        breakdown.adjustments.push({ name: 'Building Age 30-39 yrs (+15%)', amount: adjustment });
+      } else if (age < 10) {
+        const adjustment = premium * -0.05;
+        premium *= 0.95;
+        breakdown.adjustments.push({ name: 'New Construction (-5%)', amount: adjustment });
       }
     }
     
@@ -228,7 +265,8 @@ const SinglePageHO3 = () => {
       if (multiplier !== 1.0) {
         const adjustment = premium * (multiplier - 1.0);
         premium *= multiplier;
-        breakdown.adjustments.push({ name: `Wind Zone ${formData.windZone}`, amount: adjustment });
+        const pct = Math.round((multiplier - 1.0) * 100);
+        breakdown.adjustments.push({ name: `Wind Zone ${formData.windZone} (+${pct}%)`, amount: adjustment });
       }
     }
     
@@ -237,11 +275,13 @@ const SinglePageHO3 = () => {
     if (formData.roofShape === 'Hip') windDiscount += 12;
     if (formData.openingProtection === 'Impact glass') windDiscount += 20;
     if (formData.roofWallConnection === 'Double wraps') windDiscount += 15;
+    if (formData.secondaryWaterResistance === 'Yes') windDiscount += 5;
+    
     if (windDiscount > 0) {
       windDiscount = Math.min(windDiscount, 45);
       const adjustment = premium * -(windDiscount / 100);
       premium *= (1 - windDiscount / 100);
-      breakdown.adjustments.push({ name: `Wind Mitigation (${windDiscount}%)`, amount: adjustment });
+      breakdown.adjustments.push({ name: `Wind Mitigation (-${windDiscount}%)`, amount: adjustment });
     }
     
     // Claims loading
@@ -249,48 +289,96 @@ const SinglePageHO3 = () => {
     if (formData.hasLosses === false && lossCount === 0) {
       const adjustment = premium * -0.05;
       premium *= 0.95;
-      breakdown.adjustments.push({ name: 'Claims-Free Discount', amount: adjustment });
+      breakdown.adjustments.push({ name: 'Claims-Free (-5%)', amount: adjustment });
     } else if (lossCount > 0) {
       const loadPct = lossCount === 1 ? 0.10 : lossCount === 2 ? 0.25 : 0.50;
       const adjustment = premium * loadPct;
       premium *= (1 + loadPct);
-      breakdown.adjustments.push({ name: `${lossCount} Claims Surcharge`, amount: adjustment });
+      breakdown.adjustments.push({ name: `${lossCount} Claim${lossCount > 1 ? 's' : ''} (+${Math.round(loadPct * 100)}%)`, amount: adjustment });
     }
     
     // Deductible credits
     if (formData.allOtherPerilsDeductible === '5000') {
       const adjustment = premium * -0.10;
       premium *= 0.90;
-      breakdown.adjustments.push({ name: '$5,000 Deductible Credit', amount: adjustment });
+      breakdown.adjustments.push({ name: '$5,000 Deductible (-10%)', amount: adjustment });
     } else if (formData.allOtherPerilsDeductible === '10000') {
       const adjustment = premium * -0.20;
       premium *= 0.80;
-      breakdown.adjustments.push({ name: '$10,000 Deductible Credit', amount: adjustment });
+      breakdown.adjustments.push({ name: '$10,000 Deductible (-20%)', amount: adjustment });
     }
     
-    // Add fees
+    // Add Florida fees
+    const feesBeforeTotal = premium;
     const fees = {
-      FHCF: premium * 0.01,
-      FIGA: premium * 0.01,
-      EMPA: premium * 0.004,
-      policy: 25
+      FHCF: feesBeforeTotal * 0.01,
+      FIGA: feesBeforeTotal * 0.01,
+      EMPA: feesBeforeTotal * 0.004,
+      policy: 25,
+      inspection: (formData.yearBuilt && (2025 - parseInt(formData.yearBuilt)) >= 40) ? 150 : 0
     };
     
     breakdown.fees = fees;
     const total = premium + Object.values(fees).reduce((a, b) => a + b, 0);
+    
+    // Validate premium is realistic
+    if (total < 1000) {
+      console.warn('Premium seems low:', total);
+    }
+    if (total > 20000 && replacementCost < 1000000) {
+      console.warn('Premium seems high for dwelling value:', total, replacementCost);
+    }
+    
     breakdown.total = total;
     
     setPremiumEstimate(Math.round(total));
     setPremiumBreakdown(breakdown);
     
-    // Calculate carrier-specific estimates
-    setPremiumEstimates({
-      'Progressive': Math.round(total * 0.95),
-      'Universal': Math.round(total * 1.0),
-      'Tower Hill': Math.round(total * 1.10),
-      'FedNat': Math.round(total * 1.05),
-      'Citizens': Math.round(total * 1.08)
+    // Calculate carrier-specific estimates with different base rates
+    const carrierBaseRates = {
+      'Progressive': 0.0075,  // 0.75% - competitive
+      'Universal': 0.008,     // 0.8% - standard
+      'Tower Hill': 0.0085,   // 0.85% - higher
+      'FedNat': 0.0078,       // 0.78% - competitive
+      'Citizens': 0.0082      // 0.82% - not always cheapest
+    };
+    
+    const carrierEstimates = {};
+    Object.entries(carrierBaseRates).forEach(([carrier, rate]) => {
+      let carrierPremium = replacementCost * rate * countyMultiplier;
+      
+      // Apply same multipliers as main calculation
+      if (formData.roofAge) {
+        const age = parseInt(formData.roofAge);
+        if (age <= 5) carrierPremium *= 0.85;
+        else if (age <= 10) carrierPremium *= 1.0;
+        else if (age <= 15) carrierPremium *= 1.25;
+        else if (age <= 20) carrierPremium *= 1.75;
+        else carrierPremium *= 2.5;
+      }
+      
+      if (formData.windZone) {
+        const mult = { '1': 1.5, '2': 1.3, '3': 1.1, 'X': 1.0 }[formData.windZone] || 1.0;
+        carrierPremium *= mult;
+      }
+      
+      // Apply wind mitigation
+      if (windDiscount > 0) {
+        carrierPremium *= (1 - windDiscount / 100);
+      }
+      
+      // Apply claims
+      if (lossCount === 0 && formData.hasLosses === false) {
+        carrierPremium *= 0.95;
+      } else if (lossCount > 0) {
+        const loadPct = lossCount === 1 ? 0.10 : lossCount === 2 ? 0.25 : 0.50;
+        carrierPremium *= (1 + loadPct);
+      }
+      
+      carrierEstimates[carrier] = Math.round(carrierPremium + 125); // Add fees
     });
+    
+    setPremiumEstimates(carrierEstimates);
   }, [formData]);
   
   const updateField = (field, value) => {
@@ -333,24 +421,51 @@ const SinglePageHO3 = () => {
                 
                 {/* Premium breakdown on hover */}
                 {premiumEstimate > 0 && premiumBreakdown.adjustments && (
-                  <div className="invisible group-hover:visible absolute top-full right-0 mt-2 bg-white border-2 border-gray-200 rounded-lg p-3 shadow-xl z-50 w-72">
-                    <div className="font-bold text-sm mb-2">Premium Breakdown:</div>
+                  <div className="invisible group-hover:visible absolute top-full right-0 mt-2 bg-white border-2 border-blue-300 rounded-lg p-4 shadow-xl z-50 w-80">
+                    <div className="font-bold text-base mb-3 text-blue-900">Premium Calculation:</div>
                     <div className="space-y-1 text-xs">
+                      <div className="bg-blue-50 p-2 rounded mb-2">
+                        <div className="flex justify-between font-semibold">
+                          <span>Replacement Cost:</span>
+                          <span>${premiumBreakdown.replacementCost?.toLocaleString()}</span>
+                        </div>
+                        <div className="text-gray-600 mt-1">
+                          {formData.squareFeet} sq ft × $150/sq ft
+                        </div>
+                      </div>
+                      
                       <div className="flex justify-between">
-                        <span>Base Rate</span>
+                        <span>Base Rate (0.8% × {premiumBreakdown.countyMultiplier}x {formData.county})</span>
                         <span className="font-semibold">${Math.round(premiumBreakdown.base).toLocaleString()}</span>
                       </div>
+                      
                       {premiumBreakdown.adjustments.map((adj, idx) => (
                         <div key={idx} className="flex justify-between">
                           <span className="text-gray-600">{adj.name}</span>
                           <span className={`font-semibold ${adj.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {adj.amount > 0 ? '+' : ''}${Math.round(adj.amount).toLocaleString()}
+                            {adj.amount > 0 ? '+' : ''}${Math.round(Math.abs(adj.amount)).toLocaleString()}
                           </span>
                         </div>
                       ))}
-                      <div className="border-t pt-1 mt-1 flex justify-between font-bold">
-                        <span>Total:</span>
-                        <span>${premiumEstimate.toLocaleString()}</span>
+                      
+                      <div className="border-t pt-1 mt-1">
+                        {premiumBreakdown.fees && Object.entries(premiumBreakdown.fees).map(([name, amount]) => (
+                          amount > 0 && (
+                            <div key={name} className="flex justify-between text-gray-500">
+                              <span>{name} fee</span>
+                              <span>+${Math.round(amount)}</span>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                      
+                      <div className="border-t pt-1 mt-1 flex justify-between font-bold text-sm">
+                        <span>Annual Total:</span>
+                        <span className="text-blue-600">${premiumEstimate.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600">
+                        <span>Monthly:</span>
+                        <span>${Math.round(premiumEstimate / 12).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -449,12 +564,29 @@ const SinglePageHO3 = () => {
                         const ageNum = parseInt(age);
                         let feedback = null;
                         
+                        // Calculate estimated premium for this roof age (rough estimate)
+                        const estimatedDwelling = (formData.squareFeet || 2000) * 150;
+                        const estimatePremiumForAge = (dwelling, age) => {
+                          const baseRate = 0.008; // 0.8%
+                          let prem = dwelling * baseRate;
+                          if (age <= 5) prem *= 0.85;
+                          else if (age <= 10) prem *= 1.0;
+                          else if (age <= 15) prem *= 1.25;
+                          else if (age <= 20) prem *= 1.75;
+                          else prem *= 2.5;
+                          return Math.round(prem);
+                        };
+                        
+                        const estimatedPremium = estimatePremiumForAge(estimatedDwelling, ageNum);
+                        const comparisonPremium = estimatePremiumForAge(estimatedDwelling, 15);
+                        const savings = comparisonPremium - estimatedPremium;
+                        
                         if (ageNum <= 5) {
                           feedback = {
                             type: 'excellent',
                             title: '🎉 Excellent! New roof = best rates',
-                            details: `• ALL carriers will compete for this\n• Replacement Cost coverage (no depreciation)\n• Expected premium: $2,000-2,500/year\n• You just saved ~$1,500/year vs a 15-year roof!`,
-                            impact: 'Premium Impact: -$1,500/year vs older roof',
+                            details: `• ALL carriers will compete for this\n• Replacement Cost coverage (no depreciation)\n• Expected premium: $${Math.round(estimatedPremium * 0.9).toLocaleString()}-$${estimatedPremium.toLocaleString()}/year\n• You saved ~$${Math.abs(savings).toLocaleString()}/year vs a 15-year roof!`,
+                            impact: `Premium Impact: Save $${Math.abs(savings).toLocaleString()}/year (-15% from new roof)`,
                             carriers: {
                               'Progressive': '✅ Eager to quote - best rates',
                               'Universal': '✅ Very competitive',
@@ -465,8 +597,8 @@ const SinglePageHO3 = () => {
                           feedback = {
                             type: 'good',
                             title: '✅ Good - Full market availability',
-                            details: `• Most carriers will quote\n• Replacement Cost coverage available\n• Expected premium: $2,500-3,000/year\n• Standard rates for HO3`,
-                            impact: 'Premium Impact: Standard market rates',
+                            details: `• Most carriers will quote\n• Replacement Cost coverage available\n• Expected premium: $${Math.round(estimatedPremium * 0.95).toLocaleString()}-$${Math.round(estimatedPremium * 1.05).toLocaleString()}/year\n• Standard rates for HO3`,
+                            impact: 'Premium Impact: Standard market rates (no adjustment)',
                             carriers: {
                               'Progressive': '✅ Will quote',
                               'Universal': '✅ Competitive rates',
@@ -477,8 +609,8 @@ const SinglePageHO3 = () => {
                           feedback = {
                             type: 'warning',
                             title: '⚠️ Caution - Limited options',
-                            details: `• Only 5-8 carriers remain\n• Actual Cash Value settlement only (depreciation applies)\n• Expected premium: $3,500-4,500/year\n• Consider roof replacement for better rates`,
-                            impact: 'Premium Impact: +$1,000/year (25% higher)',
+                            details: `• Only 5-8 carriers remain\n• Actual Cash Value settlement only (depreciation applies)\n• Expected premium: $${Math.round(estimatedPremium * 0.95).toLocaleString()}-$${Math.round(estimatedPremium * 1.1).toLocaleString()}/year\n• Consider roof replacement to save money`,
+                            impact: `Premium Impact: +$${Math.abs(savings).toLocaleString()}/year (+25% from roof age)`,
                             carriers: {
                               'Progressive': '❌ Declined - exceeds 15-year limit',
                               'Universal': '⚠️ Will quote with ACV only',
@@ -489,8 +621,8 @@ const SinglePageHO3 = () => {
                           feedback = {
                             type: 'danger',
                             title: '🚨 Critical - E&S Markets Only',
-                            details: `• Standard markets won't write\n• Excess & Surplus lines only\n• Expected premium: $5,000-7,000/year\n• STRONG recommendation: Replace roof first`,
-                            impact: 'Premium DOUBLES vs new roof (+$2,500/year)',
+                            details: `• Standard markets won't write\n• Excess & Surplus lines only\n• Expected premium: $${Math.round(estimatedPremium * 0.9).toLocaleString()}-$${Math.round(estimatedPremium * 1.1).toLocaleString()}/year\n• STRONG recommendation: Replace roof first`,
+                            impact: `Premium Impact: +$${Math.abs(savings).toLocaleString()}/year (+75% from very old roof)`,
                             carriers: {
                               'Progressive': '❌ Declined',
                               'Universal': '❌ Declined',
@@ -501,8 +633,8 @@ const SinglePageHO3 = () => {
                           feedback = {
                             type: 'critical',
                             title: '❌ STOP - Uninsurable Without Roof Replacement',
-                            details: `• No standard market will write\n• Citizens may be only option\n• Premium: $7,000+ if accepted\n• MUST replace roof to get normal coverage`,
-                            impact: 'Must replace roof before binding HO3',
+                            details: `• No standard market will write\n• Citizens may be only option\n• Premium: $${Math.round(estimatedPremium * 0.9).toLocaleString()}-$${Math.round(estimatedPremium * 1.2).toLocaleString()}/year if accepted\n• MUST replace roof to get normal coverage`,
+                            impact: `Must replace roof before binding HO3 (saves $${Math.abs(savings).toLocaleString()}/year)`,
                             carriers: {
                               'Progressive': '❌ Automatic decline',
                               'Universal': '❌ Automatic decline',

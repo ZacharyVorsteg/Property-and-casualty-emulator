@@ -7,8 +7,12 @@ import { floridaCounties, countyRiskProfiles, baseRates, windMitigationDiscounts
 
 const SinglePageHO3 = () => {
   const [currentField, setCurrentField] = useState('default');
-  const [riskScore, setRiskScore] = useState(30);
+  const [riskScore, setRiskScore] = useState(40);
+  const [riskFactors, setRiskFactors] = useState([
+    { name: 'Base Score', impact: 40 }
+  ]);
   const [premiumEstimate, setPremiumEstimate] = useState(0);
+  const [premiumBreakdown, setPremiumBreakdown] = useState({});
   const [premiumEstimates, setPremiumEstimates] = useState({});
   const [showSections, setShowSections] = useState({
     eligibility: true,
@@ -18,6 +22,7 @@ const SinglePageHO3 = () => {
     losses: false,
     coverage: false
   });
+  const [roofAgeFeedback, setRoofAgeFeedback] = useState(null);
   
   const [formData, setFormData] = useState({
     // HO3 Eligibility
@@ -59,78 +64,172 @@ const SinglePageHO3 = () => {
     hurricaneDeductible: '2%'
   });
   
-  // Calculate risk score based on multiple factors
+  // Calculate risk score with detailed breakdown
   useEffect(() => {
-    let score = 30; // Start at "Standard"
+    let score = 40; // Base score
+    const factors = [{ name: 'Base Score', impact: 40 }];
     
     // Roof age impact (highest weight)
     if (formData.roofAge) {
       const age = parseInt(formData.roofAge);
-      if (age <= 10) score -= 10;
-      else if (age <= 15) score += 10;
-      else if (age <= 20) score += 25;
-      else score += 40;
+      let roofImpact = 0;
+      if (age <= 5) {
+        roofImpact = -20;
+        factors.push({ name: `Roof Age (${age}y - Excellent)`, impact: -20 });
+      } else if (age <= 10) {
+        roofImpact = -10;
+        factors.push({ name: `Roof Age (${age}y - Good)`, impact: -10 });
+      } else if (age <= 15) {
+        roofImpact = +10;
+        factors.push({ name: `Roof Age (${age}y - Older)`, impact: +10 });
+      } else if (age <= 20) {
+        roofImpact = +25;
+        factors.push({ name: `Roof Age (${age}y - Very Old)`, impact: +25 });
+      } else {
+        roofImpact = +40;
+        factors.push({ name: `Roof Age (${age}y - Critical)`, impact: +40 });
+      }
+      score += roofImpact;
+    }
+    
+    // Building age impact
+    if (formData.yearBuilt) {
+      const age = 2025 - parseInt(formData.yearBuilt);
+      if (age > 40) {
+        score += 15;
+        factors.push({ name: `Building Age (${age}y - Inspection Needed)`, impact: +15 });
+      } else if (age > 30) {
+        score += 10;
+        factors.push({ name: `Building Age (${age}y - Older)`, impact: +10 });
+      } else if (age < 10) {
+        score -= 10;
+        factors.push({ name: `Building Age (${age}y - New)`, impact: -10 });
+      }
     }
     
     // Wind zone impact
-    if (formData.windZone === '1') score += 20;
-    else if (formData.windZone === '2') score += 10;
-    else if (formData.windZone === 'X') score -= 10;
+    if (formData.windZone === '1') {
+      score += 20;
+      factors.push({ name: 'Wind Zone 1 (High Exposure)', impact: +20 });
+    } else if (formData.windZone === '2') {
+      score += 10;
+      factors.push({ name: 'Wind Zone 2 (Moderate)', impact: +10 });
+    } else if (formData.windZone === 'X') {
+      score -= 10;
+      factors.push({ name: 'Wind Zone X (Inland)', impact: -10 });
+    }
     
     // Claims impact
     const lossCount = formData.losses?.length || 0;
-    score += lossCount * 15;
-    
-    // Building age
-    if (formData.yearBuilt) {
-      const age = 2025 - parseInt(formData.yearBuilt);
-      if (age > 40) score += 15;
-      else if (age > 30) score += 10;
-      else if (age < 10) score -= 10;
+    if (lossCount > 0) {
+      const claimsImpact = lossCount * 15;
+      score += claimsImpact;
+      factors.push({ name: `${lossCount} Claim${lossCount > 1 ? 's' : ''}`, impact: claimsImpact });
+    } else if (formData.hasLosses === false) {
+      score -= 5;
+      factors.push({ name: 'Claims-Free History', impact: -5 });
     }
     
     // Wind mitigation credits
-    if (formData.roofShape === 'Hip') score -= 5;
-    if (formData.openingProtection === 'Impact glass') score -= 10;
+    if (formData.roofShape === 'Hip') {
+      score -= 5;
+      factors.push({ name: 'Hip Roof Discount', impact: -5 });
+    }
+    if (formData.openingProtection === 'Impact glass') {
+      score -= 10;
+      factors.push({ name: 'Impact Glass Discount', impact: -10 });
+    }
+    if (formData.exteriorWalls === 'Masonry/Concrete Block (CBS)') {
+      score -= 5;
+      factors.push({ name: 'CBS Construction', impact: -5 });
+    }
     
     // Cap between 0-100
     score = Math.max(0, Math.min(100, score));
     setRiskScore(score);
+    setRiskFactors(factors);
   }, [formData]);
   
-  // Calculate premium estimate
+  // Calculate premium estimate with breakdown
   useEffect(() => {
-    if (!formData.dwellingLimit || formData.dwellingLimit === 0) return;
+    // Start calculating once we have basic info
+    if (!formData.squareFeet) return;
     
-    const dwelling = parseInt(formData.dwellingLimit);
+    const sqft = parseInt(formData.squareFeet) || 0;
     const county = formData.county || 'Orange';
     const sqftRate = baseRates[county] || baseRates.default;
     
-    // Base premium
-    let premium = (dwelling / 100) * sqftRate;
+    // Base rate calculation
+    const baseRate = sqft * (sqftRate * 100);
+    let premium = baseRate;
+    
+    const breakdown = {
+      base: baseRate,
+      adjustments: []
+    };
     
     // Construction multiplier
-    if (formData.exteriorWalls === 'Frame') premium *= 1.1;
-    else if (formData.exteriorWalls === 'Masonry/Concrete Block (CBS)') premium *= 0.95;
+    if (formData.exteriorWalls) {
+      if (formData.exteriorWalls === 'Frame') {
+        const adjustment = premium * 0.1;
+        premium *= 1.1;
+        breakdown.adjustments.push({ name: 'Frame Construction', amount: adjustment });
+      } else if (formData.exteriorWalls === 'Masonry/Concrete Block (CBS)') {
+        const adjustment = premium * -0.05;
+        premium *= 0.95;
+        breakdown.adjustments.push({ name: 'CBS Construction (Credit)', amount: adjustment });
+      }
+    }
     
-    // Age multiplier
+    // Roof age multiplier (biggest impact!)
+    if (formData.roofAge) {
+      const age = parseInt(formData.roofAge);
+      let multiplier = 1.0;
+      if (age <= 5) {
+        multiplier = 0.9;
+        const adjustment = baseRate * -0.1;
+        breakdown.adjustments.push({ name: 'New Roof Discount', amount: adjustment });
+      } else if (age <= 10) {
+        multiplier = 1.0;
+      } else if (age <= 15) {
+        multiplier = 1.15;
+        const adjustment = baseRate * 0.15;
+        breakdown.adjustments.push({ name: 'Older Roof Surcharge', amount: adjustment });
+      } else if (age <= 20) {
+        multiplier = 1.35;
+        const adjustment = baseRate * 0.35;
+        breakdown.adjustments.push({ name: 'Very Old Roof Surcharge', amount: adjustment });
+      } else {
+        multiplier = 1.8;
+        const adjustment = baseRate * 0.8;
+        breakdown.adjustments.push({ name: 'Critical Roof Age Surcharge', amount: adjustment });
+      }
+      premium *= multiplier;
+    }
+    
+    // Building age
     if (formData.yearBuilt) {
       const age = 2025 - parseInt(formData.yearBuilt);
-      if (age >= 40) premium *= 1.3;
-      else if (age >= 30) premium *= 1.2;
-      else if (age >= 20) premium *= 1.1;
+      if (age >= 40) {
+        const adjustment = premium * 0.3;
+        premium *= 1.3;
+        breakdown.adjustments.push({ name: 'Building Age (40+ years)', amount: adjustment });
+      } else if (age >= 30) {
+        const adjustment = premium * 0.2;
+        premium *= 1.2;
+        breakdown.adjustments.push({ name: 'Building Age (30+ years)', amount: adjustment });
+      }
     }
     
     // Wind zone multiplier
-    const windMultipliers = { '1': 1.5, '2': 1.3, '3': 1.1, 'X': 1.0 };
-    premium *= windMultipliers[formData.windZone] || 1.0;
-    
-    // Roof age multiplier
-    if (formData.roofAge) {
-      const age = parseInt(formData.roofAge);
-      if (age <= 5) premium *= 0.9;
-      else if (age <= 15) premium *= 1.15;
-      else if (age <= 20) premium *= 1.35;
+    if (formData.windZone) {
+      const windMultipliers = { '1': 1.5, '2': 1.3, '3': 1.1, 'X': 1.0 };
+      const multiplier = windMultipliers[formData.windZone];
+      if (multiplier !== 1.0) {
+        const adjustment = premium * (multiplier - 1.0);
+        premium *= multiplier;
+        breakdown.adjustments.push({ name: `Wind Zone ${formData.windZone}`, amount: adjustment });
+      }
     }
     
     // Wind mitigation discounts
@@ -138,19 +237,36 @@ const SinglePageHO3 = () => {
     if (formData.roofShape === 'Hip') windDiscount += 12;
     if (formData.openingProtection === 'Impact glass') windDiscount += 20;
     if (formData.roofWallConnection === 'Double wraps') windDiscount += 15;
-    windDiscount = Math.min(windDiscount, 45);
-    premium *= (1 - windDiscount / 100);
+    if (windDiscount > 0) {
+      windDiscount = Math.min(windDiscount, 45);
+      const adjustment = premium * -(windDiscount / 100);
+      premium *= (1 - windDiscount / 100);
+      breakdown.adjustments.push({ name: `Wind Mitigation (${windDiscount}%)`, amount: adjustment });
+    }
     
     // Claims loading
     const lossCount = formData.losses?.length || 0;
-    if (lossCount === 0) premium *= 0.95;
-    else if (lossCount === 1) premium *= 1.10;
-    else if (lossCount === 2) premium *= 1.25;
-    else premium *= 1.50;
+    if (formData.hasLosses === false && lossCount === 0) {
+      const adjustment = premium * -0.05;
+      premium *= 0.95;
+      breakdown.adjustments.push({ name: 'Claims-Free Discount', amount: adjustment });
+    } else if (lossCount > 0) {
+      const loadPct = lossCount === 1 ? 0.10 : lossCount === 2 ? 0.25 : 0.50;
+      const adjustment = premium * loadPct;
+      premium *= (1 + loadPct);
+      breakdown.adjustments.push({ name: `${lossCount} Claims Surcharge`, amount: adjustment });
+    }
     
     // Deductible credits
-    if (formData.allOtherPerilsDeductible === '5000') premium *= 0.90;
-    else if (formData.allOtherPerilsDeductible === '10000') premium *= 0.80;
+    if (formData.allOtherPerilsDeductible === '5000') {
+      const adjustment = premium * -0.10;
+      premium *= 0.90;
+      breakdown.adjustments.push({ name: '$5,000 Deductible Credit', amount: adjustment });
+    } else if (formData.allOtherPerilsDeductible === '10000') {
+      const adjustment = premium * -0.20;
+      premium *= 0.80;
+      breakdown.adjustments.push({ name: '$10,000 Deductible Credit', amount: adjustment });
+    }
     
     // Add fees
     const fees = {
@@ -160,9 +276,12 @@ const SinglePageHO3 = () => {
       policy: 25
     };
     
+    breakdown.fees = fees;
     const total = premium + Object.values(fees).reduce((a, b) => a + b, 0);
+    breakdown.total = total;
     
     setPremiumEstimate(Math.round(total));
+    setPremiumBreakdown(breakdown);
     
     // Calculate carrier-specific estimates
     setPremiumEstimates({
@@ -199,16 +318,43 @@ const SinglePageHO3 = () => {
             </div>
             
             <div className="flex items-center gap-6">
-              <RiskMeter score={riskScore} />
+              <RiskMeter score={riskScore} factors={riskFactors} />
               
-              <div className="text-right">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Estimated Premium</div>
-                <div className="text-2xl font-bold text-blue-600">
-                  ${premiumEstimate > 0 ? premiumEstimate.toLocaleString() : '---'}
+              <div className="relative group">
+                <div className="text-right">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide">Estimated Premium</div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    ${premiumEstimate > 0 ? premiumEstimate.toLocaleString() : '---'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    ${premiumEstimate > 0 ? Math.round(premiumEstimate / 12).toLocaleString() : '---'}/month
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  ${premiumEstimate > 0 ? Math.round(premiumEstimate / 12).toLocaleString() : '---'}/month
-                </div>
+                
+                {/* Premium breakdown on hover */}
+                {premiumEstimate > 0 && premiumBreakdown.adjustments && (
+                  <div className="invisible group-hover:visible absolute top-full right-0 mt-2 bg-white border-2 border-gray-200 rounded-lg p-3 shadow-xl z-50 w-72">
+                    <div className="font-bold text-sm mb-2">Premium Breakdown:</div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span>Base Rate</span>
+                        <span className="font-semibold">${Math.round(premiumBreakdown.base).toLocaleString()}</span>
+                      </div>
+                      {premiumBreakdown.adjustments.map((adj, idx) => (
+                        <div key={idx} className="flex justify-between">
+                          <span className="text-gray-600">{adj.name}</span>
+                          <span className={`font-semibold ${adj.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {adj.amount > 0 ? '+' : ''}${Math.round(adj.amount).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="border-t pt-1 mt-1 flex justify-between font-bold">
+                        <span>Total:</span>
+                        <span>${premiumEstimate.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -294,48 +440,130 @@ const SinglePageHO3 = () => {
                     type="number"
                     value={formData.roofAge}
                     onChange={(e) => {
-                      updateField('roofAge', e.target.value);
+                      const age = e.target.value;
+                      updateField('roofAge', age);
                       setCurrentField('roofAge');
-                      if (e.target.value && formData.occupancy === 'owner_occupied') {
-                        revealSection('property');
+                      
+                      // Generate immediate feedback
+                      if (age) {
+                        const ageNum = parseInt(age);
+                        let feedback = null;
+                        
+                        if (ageNum <= 5) {
+                          feedback = {
+                            type: 'excellent',
+                            title: '🎉 Excellent! New roof = best rates',
+                            details: `• ALL carriers will compete for this\n• Replacement Cost coverage (no depreciation)\n• Expected premium: $2,000-2,500/year\n• You just saved ~$1,500/year vs a 15-year roof!`,
+                            impact: 'Premium Impact: -$1,500/year vs older roof',
+                            carriers: {
+                              'Progressive': '✅ Eager to quote - best rates',
+                              'Universal': '✅ Very competitive',
+                              'Tower Hill': '✅ Will offer RCV settlement'
+                            }
+                          };
+                        } else if (ageNum <= 10) {
+                          feedback = {
+                            type: 'good',
+                            title: '✅ Good - Full market availability',
+                            details: `• Most carriers will quote\n• Replacement Cost coverage available\n• Expected premium: $2,500-3,000/year\n• Standard rates for HO3`,
+                            impact: 'Premium Impact: Standard market rates',
+                            carriers: {
+                              'Progressive': '✅ Will quote',
+                              'Universal': '✅ Competitive rates',
+                              'Tower Hill': '✅ RCV available'
+                            }
+                          };
+                        } else if (ageNum <= 15) {
+                          feedback = {
+                            type: 'warning',
+                            title: '⚠️ Caution - Limited options',
+                            details: `• Only 5-8 carriers remain\n• Actual Cash Value settlement only (depreciation applies)\n• Expected premium: $3,500-4,500/year\n• Consider roof replacement for better rates`,
+                            impact: 'Premium Impact: +$1,000/year (25% higher)',
+                            carriers: {
+                              'Progressive': '❌ Declined - exceeds 15-year limit',
+                              'Universal': '⚠️ Will quote with ACV only',
+                              'Citizens': '✅ Available as backup'
+                            }
+                          };
+                        } else if (ageNum <= 20) {
+                          feedback = {
+                            type: 'danger',
+                            title: '🚨 Critical - E&S Markets Only',
+                            details: `• Standard markets won't write\n• Excess & Surplus lines only\n• Expected premium: $5,000-7,000/year\n• STRONG recommendation: Replace roof first`,
+                            impact: 'Premium DOUBLES vs new roof (+$2,500/year)',
+                            carriers: {
+                              'Progressive': '❌ Declined',
+                              'Universal': '❌ Declined',
+                              'Citizens': '✅ Last resort option only'
+                            }
+                          };
+                        } else {
+                          feedback = {
+                            type: 'critical',
+                            title: '❌ STOP - Uninsurable Without Roof Replacement',
+                            details: `• No standard market will write\n• Citizens may be only option\n• Premium: $7,000+ if accepted\n• MUST replace roof to get normal coverage`,
+                            impact: 'Must replace roof before binding HO3',
+                            carriers: {
+                              'Progressive': '❌ Automatic decline',
+                              'Universal': '❌ Automatic decline',
+                              'Citizens': '⚠️ May accept at very high rate'
+                            }
+                          };
+                        }
+                        
+                        setRoofAgeFeedback(feedback);
+                        
+                        // Auto-reveal property section if passes
+                        if (ageNum <= 25 && formData.occupancy === 'owner_occupied') {
+                          setTimeout(() => revealSection('property'), 300);
+                        }
+                      } else {
+                        setRoofAgeFeedback(null);
                       }
                     }}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border-2 rounded-lg transition-all ${
+                      roofAgeFeedback?.type === 'excellent' ? 'border-green-500 bg-green-50' :
+                      roofAgeFeedback?.type === 'good' ? 'border-green-400 bg-green-50' :
+                      roofAgeFeedback?.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
+                      roofAgeFeedback?.type === 'danger' ? 'border-red-500 bg-red-50' :
+                      roofAgeFeedback?.type === 'critical' ? 'border-red-700 bg-red-100' :
+                      'border-gray-300'
+                    } focus:ring-2 focus:ring-blue-500`}
                     placeholder="Enter roof age"
                     min="0"
                     max="100"
                   />
                   
-                  {formData.roofAge && (
-                    <>
-                      {parseInt(formData.roofAge) <= 10 && (
-                        <div className="mt-3 p-3 bg-green-50 border-l-4 border-green-500 rounded-r">
-                          <p className="text-sm font-bold text-green-900">✅ Excellent for HO3!</p>
-                          <p className="text-xs text-green-800">All carriers will compete. RCV settlement available.</p>
+                  {roofAgeFeedback && (
+                    <div className={`mt-3 p-4 rounded-lg border-l-4 animate-slideIn ${
+                      roofAgeFeedback.type === 'excellent' ? 'bg-green-50 border-green-500' :
+                      roofAgeFeedback.type === 'good' ? 'bg-green-50 border-green-400' :
+                      roofAgeFeedback.type === 'warning' ? 'bg-yellow-50 border-yellow-500' :
+                      roofAgeFeedback.type === 'danger' ? 'bg-red-50 border-red-500' :
+                      'bg-red-100 border-red-700'
+                    }`}>
+                      <h4 className="font-bold text-base mb-2">{roofAgeFeedback.title}</h4>
+                      <p className="text-sm whitespace-pre-line mb-2">{roofAgeFeedback.details}</p>
+                      
+                      {roofAgeFeedback.impact && (
+                        <div className="mt-3 p-2 bg-white/50 rounded font-bold text-sm">
+                          💰 {roofAgeFeedback.impact}
                         </div>
                       )}
                       
-                      {parseInt(formData.roofAge) > 10 && parseInt(formData.roofAge) <= 15 && (
-                        <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-500 rounded-r">
-                          <p className="text-sm font-bold text-yellow-900">⚠️ Limited HO3 carriers</p>
-                          <p className="text-xs text-yellow-800">Some carriers decline. May require ACV settlement.</p>
+                      {roofAgeFeedback.carriers && (
+                        <div className="mt-3 p-2 bg-white/50 rounded">
+                          <p className="font-semibold text-sm mb-1">Carrier Impact:</p>
+                          <div className="space-y-1">
+                            {Object.entries(roofAgeFeedback.carriers).map(([carrier, status]) => (
+                              <div key={carrier} className="text-xs">
+                                <strong>{carrier}:</strong> {status}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                      
-                      {parseInt(formData.roofAge) > 15 && parseInt(formData.roofAge) <= 20 && (
-                        <div className="mt-3 p-3 bg-orange-50 border-l-4 border-orange-500 rounded-r">
-                          <p className="text-sm font-bold text-orange-900">⚠️ Very Limited Options</p>
-                          <p className="text-xs text-orange-800">Most HO3 carriers decline. E&S markets may be needed.</p>
-                        </div>
-                      )}
-                      
-                      {parseInt(formData.roofAge) > 20 && (
-                        <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-500 rounded-r">
-                          <p className="text-sm font-bold text-red-900">❌ Too Old for Standard HO3</p>
-                          <p className="text-xs text-red-800">Options: Citizens Property Insurance or roof replacement required.</p>
-                        </div>
-                      )}
-                    </>
+                    </div>
                   )}
                 </div>
               </div>

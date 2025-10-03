@@ -28,18 +28,44 @@ const LiveCarrierMatrix = ({ riskProfile, premiumEstimates }) => {
     const rule = rules[carrier.name];
     if (!rule) return 'pending';
     
-    // Check eligibility
+    // Check eligibility with detailed reasons
+    const reasons = [];
+    let isEligible = true;
+    
     if (roofAge > rule.roofMax) {
-      return { status: 'declined', reason: `Roof age ${roofAge} > max ${rule.roofMax}` };
+      isEligible = false;
+      reasons.push(`Roof age ${roofAge} exceeds maximum ${rule.roofMax} years`);
     }
     if (lossCount > rule.lossMax) {
-      return { status: 'declined', reason: `${lossCount} losses > max ${rule.lossMax}` };
+      isEligible = false;
+      reasons.push(`${lossCount} claim${lossCount > 1 ? 's' : ''} exceeds maximum ${rule.lossMax}`);
     }
     if (!rule.zones.includes(windZone) && windZone) {
-      return { status: 'declined', reason: `Wind zone ${windZone} not accepted` };
+      isEligible = false;
+      reasons.push(`Wind Zone ${windZone} not accepted (accepts: ${rule.zones.join(', ')})`);
     }
     
-    return { status: 'eligible', premium: premiumEstimates[carrier.name] };
+    if (!isEligible) {
+      return { status: 'declined', reasons };
+    }
+    
+    // Add positive reasons for eligible carriers
+    const positiveReasons = [];
+    if (roofAge <= rule.roofMax) {
+      positiveReasons.push(`✓ Roof age ${roofAge} within limits`);
+    }
+    if (lossCount <= rule.lossMax) {
+      positiveReasons.push(`✓ Loss history acceptable`);
+    }
+    if (rule.zones.includes(windZone) || !windZone) {
+      positiveReasons.push(`✓ Wind zone acceptable`);
+    }
+    
+    return { 
+      status: 'eligible', 
+      premium: premiumEstimates[carrier.name],
+      reasons: positiveReasons
+    };
   };
   
   return (
@@ -86,14 +112,18 @@ const LiveCarrierMatrix = ({ riskProfile, premiumEstimates }) => {
                   
                   {result.premium && (
                     <span className="text-sm font-bold text-green-700">
-                      ${result.premium.toLocaleString()}
+                      ${result.premium.toLocaleString()}/yr
                     </span>
                   )}
                 </div>
                 
-                {result.reason && (
-                  <div className="text-xs text-red-600 mt-1 ml-6">
-                    {result.reason}
+                {result.reasons && result.reasons.length > 0 && (
+                  <div className={`text-xs mt-1 ml-6 space-y-0.5 ${
+                    result.status === 'declined' ? 'text-red-700' : 'text-green-700'
+                  }`}>
+                    {result.reasons.map((reason, idx) => (
+                      <div key={idx}>{reason}</div>
+                    ))}
                   </div>
                 )}
               </motion.div>

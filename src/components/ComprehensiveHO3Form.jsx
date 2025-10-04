@@ -937,6 +937,75 @@ const ComprehensiveHO3Form = ({ formData, updateField, showSections, revealSecti
         </motion.section>
       )}
       
+      {/* SECTION 10: COMPLETION SUMMARY */}
+      {showSections.coverage && formData.creditScore && (
+        <motion.section
+          id="summary"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-8"
+        >
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-xl shadow-2xl p-8">
+            <div className="text-center mb-6">
+              <h2 className="text-4xl font-bold mb-2">🎓 HO3 Underwriting Complete!</h2>
+              <p className="text-blue-100">You've processed all 50+ underwriting factors</p>
+            </div>
+            
+            {/* Final Decision */}
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 mb-6">
+              <h3 className="text-2xl font-bold mb-4">
+                Final Decision
+              </h3>
+              
+              {formData.plumbingType === 'Polybutylene' || 
+               formData.electricalPanel === 'Federal Pacific (FPE)' ||
+               formData.electricalPanel === 'Zinsco/Sylvania' ||
+               (formData.hasPool && formData.poolFence === 'None') ||
+               (formData.hasDogs && formData.dogBreeds?.some(b => ['Pit Bull', 'Rottweiler', 'Doberman'].includes(b))) ||
+               parseInt(formData.roofAge) > 25 ? (
+                <div>
+                  <p className="text-2xl font-bold text-red-300 mb-2">❌ DECLINED</p>
+                  <p className="text-sm text-blue-100">Policy cannot be issued - critical issues must be resolved</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-2xl font-bold text-green-300 mb-2">✅ APPROVED</p>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="bg-white/10 rounded p-3">
+                      <p className="text-sm text-blue-200">Annual Premium</p>
+                      <p className="text-3xl font-bold">${(formData.squareFeet ? Math.round(parseInt(formData.squareFeet) * 150 * 0.008 * 1.2) : 0).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-white/10 rounded p-3">
+                      <p className="text-sm text-blue-200">Monthly Payment</p>
+                      <p className="text-3xl font-bold">${(formData.squareFeet ? Math.round(parseInt(formData.squareFeet) * 150 * 0.008 * 1.2 / 12) : 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Key Learning Points */}
+            <div className="bg-yellow-400/20 backdrop-blur rounded-lg p-4">
+              <h3 className="font-bold text-lg mb-3">🎯 What You Learned:</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                <div>✓ HO3 requires owner-occupancy</div>
+                <div>✓ Roof age can triple premium</div>
+                <div>✓ Polybutylene = uninsurable</div>
+                <div>✓ FPE/Zinsco = fire hazards</div>
+                <div>✓ Pool must be fenced</div>
+                <div>✓ Dog breeds matter</div>
+                <div>✓ Credit: 40-80% impact!</div>
+                <div>✓ Wind mitigation saves 15-45%</div>
+                <div>✓ 3+ claims = decline</div>
+                <div>✓ Inspections cost $125-425</div>
+                <div>✓ Hurricane deductible = percentage</div>
+                <div>✓ Coastal pays 50% more</div>
+              </div>
+            </div>
+          </div>
+        </motion.section>
+      )}
+      
     </div>
   );
 };

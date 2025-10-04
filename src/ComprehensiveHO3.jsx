@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import RiskMeter from './components/RiskMeter';
-import LiveCarrierMatrix from './components/LiveCarrierMatrix';
+import ExpandedCarrierMatrix from './components/ExpandedCarrierMatrix';
 import EducationalSidebar from './components/EducationalSidebar';
 import ComprehensiveHO3Form from './components/ComprehensiveHO3Form';
+import ProgressIndicator from './components/ProgressIndicator';
+import CompletionSummary from './components/CompletionSummary';
 import { floridaCounties } from './data/floridaData';
 import { 
   immediateDeclineReasons, 
@@ -161,6 +163,46 @@ const ComprehensiveHO3 = () => {
     setTimeout(() => {
       document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
+  };
+  
+  const resetForm = () => {
+    if (confirm('Reset all data and start over? This cannot be undone.')) {
+      window.location.reload();
+    }
+  };
+  
+  const saveScenario = () => {
+    const scenario = {
+      name: prompt('Name this scenario:') || `Scenario ${Date.now()}`,
+      data: formData,
+      premium: premiumEstimate,
+      riskScore,
+      timestamp: new Date().toISOString()
+    };
+    
+    const saved = JSON.parse(localStorage.getItem('savedScenarios') || '[]');
+    saved.push(scenario);
+    localStorage.setItem('savedScenarios', JSON.stringify(saved));
+    alert(`Scenario "${scenario.name}" saved! You can compare scenarios later.`);
+  };
+  
+  const loadScenario = () => {
+    const saved = JSON.parse(localStorage.getItem('savedScenarios') || '[]');
+    if (saved.length === 0) {
+      alert('No saved scenarios found.');
+      return;
+    }
+    
+    const scenarioList = saved.map((s, i) => `${i + 1}. ${s.name} - $${s.premium}/yr`).join('\n');
+    const choice = prompt(`Saved Scenarios:\n\n${scenarioList}\n\nEnter number to load:`);
+    
+    if (choice) {
+      const index = parseInt(choice) - 1;
+      if (saved[index]) {
+        setFormData(saved[index].data);
+        alert(`Loaded: ${saved[index].name}`);
+      }
+    }
   };
   
   // Check for immediate declines
@@ -529,7 +571,31 @@ const ComprehensiveHO3 = () => {
               <p className="text-sm text-gray-600">50+ Real-World Underwriting Factors - Florida Homeowners Insurance</p>
             </div>
             
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4">
+              <div className="flex gap-2">
+                <button
+                  onClick={resetForm}
+                  className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+                  title="Reset all data"
+                >
+                  🔄 Reset
+                </button>
+                <button
+                  onClick={saveScenario}
+                  className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+                  title="Save this scenario"
+                >
+                  💾 Save
+                </button>
+                <button
+                  onClick={loadScenario}
+                  className="px-3 py-1 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors"
+                  title="Load saved scenario"
+                >
+                  📂 Load
+                </button>
+              </div>
+              
               <RiskMeter score={riskScore} factors={riskFactors} />
               
               <div className="relative group">
@@ -668,8 +734,9 @@ const ComprehensiveHO3 = () => {
           
           {/* Sidebar */}
           <div className="lg:col-span-1 space-y-6">
+            <ProgressIndicator showSections={showSections} activeDeclines={activeDeclines} />
+            <ExpandedCarrierMatrix riskProfile={formData} premiumEstimates={premiumEstimates} />
             <EducationalSidebar currentField={currentField} riskProfile={formData} />
-            <LiveCarrierMatrix riskProfile={formData} premiumEstimates={premiumEstimates} />
           </div>
         </div>
       </div>

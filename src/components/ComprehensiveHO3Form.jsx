@@ -383,7 +383,7 @@ const ComprehensiveHO3Form = ({ formData, updateField, showSections, revealSecti
                     placeholder="Years"
                   />
                   {formData.waterHeaterAge && parseInt(formData.waterHeaterAge) > 10 && (
-                    <p className="text-xs text-yellow-600 mt-1">⚠️ >10 years old - consider replacement</p>
+                    <p className="text-xs text-yellow-600 mt-1">⚠️ Over 10 years old - consider replacement</p>
                   )}
                 </div>
               </div>
@@ -482,7 +482,7 @@ const ComprehensiveHO3Form = ({ formData, updateField, showSections, revealSecti
                 placeholder="500"
               />
               {formData.distanceToFireHydrant && parseInt(formData.distanceToFireHydrant) > 1000 && (
-                <p className="text-xs text-orange-600 mt-1">⚠️ >1,000 ft = Poor fire protection (+15% premium)</p>
+                <p className="text-xs text-orange-600 mt-1">⚠️ Over 1,000 ft = Poor fire protection (+15% premium)</p>
               )}
             </div>
             
@@ -497,7 +497,7 @@ const ComprehensiveHO3Form = ({ formData, updateField, showSections, revealSecti
                 placeholder="2.5"
               />
               {formData.distanceToFireStation && parseFloat(formData.distanceToFireStation) > 5 && (
-                <p className="text-xs text-orange-600 mt-1">⚠️ >5 miles = Protection Class 9-10 (limited carriers)</p>
+                <p className="text-xs text-orange-600 mt-1">⚠️ Over 5 miles = Protection Class 9-10 (limited carriers)</p>
               )}
             </div>
             

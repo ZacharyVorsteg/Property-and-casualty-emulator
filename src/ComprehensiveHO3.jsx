@@ -316,6 +316,15 @@ const ComprehensiveHO3 = () => {
     setRequiredInspections(inspections);
   }, [formData]);
   
+  // Calculate dwelling limit separately
+  useEffect(() => {
+    if (formData.squareFeet && !formData.dwellingLimit) {
+      const sqft = parseInt(formData.squareFeet);
+      const replacementCost = sqft * 150;
+      setFormData(prev => ({ ...prev, dwellingLimit: replacementCost }));
+    }
+  }, [formData.squareFeet, formData.dwellingLimit]);
+  
   // Calculate comprehensive premium
   useEffect(() => {
     if (!formData.squareFeet || !formData.yearBuilt) {

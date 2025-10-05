@@ -316,14 +316,19 @@ const ComprehensiveHO3 = () => {
     setRequiredInspections(inspections);
   }, [formData]);
   
-  // Calculate dwelling limit separately
+  // Calculate dwelling limit separately - avoid infinite loop
   useEffect(() => {
-    if (formData.squareFeet && !formData.dwellingLimit) {
+    if (formData.squareFeet) {
       const sqft = parseInt(formData.squareFeet);
-      const replacementCost = sqft * 150;
-      setFormData(prev => ({ ...prev, dwellingLimit: replacementCost }));
+      if (!isNaN(sqft) && sqft > 0) {
+        const calculatedReplacement = sqft * 150;
+        // Only update if different to avoid loop
+        if (formData.dwellingLimit !== calculatedReplacement) {
+          setFormData(prev => ({ ...prev, dwellingLimit: calculatedReplacement }));
+        }
+      }
     }
-  }, [formData.squareFeet, formData.dwellingLimit]);
+  }, [formData.squareFeet]); // Only depend on squareFeet, not dwellingLimit
   
   // Calculate comprehensive premium
   useEffect(() => {

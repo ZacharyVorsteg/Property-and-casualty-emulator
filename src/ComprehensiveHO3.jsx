@@ -6,6 +6,7 @@ import EducationalSidebar from './components/EducationalSidebar';
 import ComprehensiveHO3Form from './components/ComprehensiveHO3Form';
 import ProgressIndicator from './components/ProgressIndicator';
 import CompletionSummary from './components/CompletionSummary';
+import ScenarioLoader from './components/ScenarioLoader';
 import { floridaCounties } from './data/floridaData';
 import { 
   immediateDeclineReasons, 
@@ -200,9 +201,37 @@ const ComprehensiveHO3 = () => {
       const index = parseInt(choice) - 1;
       if (saved[index]) {
         setFormData(saved[index].data);
+        // Reveal all sections that have data
+        setShowSections({
+          eligibility: true,
+          insuranceHistory: true,
+          property: true,
+          systems: true,
+          location: true,
+          windMit: true,
+          liabilityRisks: true,
+          personalFactors: true,
+          coverage: true
+        });
         alert(`Loaded: ${saved[index].name}`);
       }
     }
+  };
+  
+  const loadPresetScenario = (scenarioData) => {
+    setFormData(prevData => ({ ...prevData, ...scenarioData }));
+    // Reveal all sections for preset scenarios
+    setShowSections({
+      eligibility: true,
+      insuranceHistory: true,
+      property: true,
+      systems: true,
+      location: true,
+      windMit: true,
+      liabilityRisks: true,
+      personalFactors: true,
+      coverage: true
+    });
   };
   
   // Check for immediate declines
@@ -584,6 +613,7 @@ const ComprehensiveHO3 = () => {
             
             <div className="flex items-center gap-4">
               <div className="flex gap-2">
+                <ScenarioLoader onLoadScenario={loadPresetScenario} />
                 <button
                   onClick={resetForm}
                   className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"

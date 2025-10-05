@@ -316,34 +316,31 @@ const ComprehensiveHO3 = () => {
     setRequiredInspections(inspections);
   }, [formData]);
   
-  // Calculate dwelling limit separately - avoid infinite loop
-  useEffect(() => {
-    if (formData.squareFeet) {
-      const sqft = parseInt(formData.squareFeet);
-      if (!isNaN(sqft) && sqft > 0) {
-        const calculatedReplacement = sqft * 150;
-        // Only update if different to avoid loop
-        if (formData.dwellingLimit !== calculatedReplacement) {
-          setFormData(prev => ({ ...prev, dwellingLimit: calculatedReplacement }));
-        }
-      }
-    }
-  }, [formData.squareFeet]); // Only depend on squareFeet, not dwellingLimit
+  // Calculate dwelling limit when sqft changes - SIMPLIFIED to prevent loops
+  const replacementCost = formData.squareFeet ? parseInt(formData.squareFeet) * 150 : 0;
   
-  // Calculate comprehensive premium
+  // Calculate comprehensive premium - NO STATE UPDATES IN THIS EFFECT
   useEffect(() => {
-    if (!formData.squareFeet || !formData.yearBuilt) {
+    // Need square footage at minimum
+    if (!formData.squareFeet) {
       setPremiumEstimate(0);
+      setPremiumBreakdown({});
       return;
     }
     
     const sqft = parseInt(formData.squareFeet);
-    const replacementCost = sqft * 150;
+    if (isNaN(sqft) || sqft <= 0) {
+      setPremiumEstimate(0);
+      setPremiumBreakdown({});
+      return;
+    }
+    
+    const calcReplacementCost = sqft * 150;
     
     // Base rate 0.8%
-    let premium = replacementCost * 0.008;
+    let premium = calcReplacementCost * 0.008;
     const breakdown = {
-      replacementCost,
+      replacementCost: calcReplacementCost,
       base: premium,
       adjustments: []
     };

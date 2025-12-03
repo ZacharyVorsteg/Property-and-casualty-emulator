@@ -225,7 +225,7 @@ const StudyGuide = () => {
     },
     {
       id: 'exclusions',
-      title: '🚫 What's NOT Covered (MEMORIZE THESE)',
+      title: "🚫 What's NOT Covered (MEMORIZE THESE)",
       icon: '❌',
       content: (
         <div className="space-y-4">
